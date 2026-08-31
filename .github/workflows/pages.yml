@@ -1,4 +1,4 @@
-name: Deploy RheumDx to GitHub Pages
+name: Verify RheumDx build
 
 on:
   push:
@@ -7,43 +7,20 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct and verify application
+      - name: Reconstruct and verify v12 application
         shell: bash
         run: |
           set -euo pipefail
-          cat build/index.html.gz.b64.part* | base64 --decode | gzip --decompress > index.html
-          echo "799355becdfe620ca58dd07807686a374a7c199bf0334fd3dd94b2404bf86ec4  index.html" | sha256sum --check -
-          mkdir -p _site
-          cp index.html _site/index.html
-          touch _site/.nojekyll
-
-      - name: Setup and enable Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          cat build/index.html.gz.b64.part* | base64 --decode | gzip --decompress > /tmp/rheumdx-index.html
+          echo "bf6e9aa8207d9bf667687bebc330bfe1b8ab4907ba6bcdf6da2e058c36e95b5f  /tmp/rheumdx-index.html" | sha256sum --check -
+          grep -q "Dictate case" /tmp/rheumdx-index.html
+          grep -q "Challenge / refine the reasoning" /tmp/rheumdx-index.html
+          echo "RheumDx v12 package verified successfully."
