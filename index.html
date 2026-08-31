@@ -22,9 +22,17 @@
     const status=document.getElementById('status');
     try{
       if(typeof DecompressionStream==='undefined') throw new Error('This browser does not support gzip decompression. Please use a current version of Chrome, Edge, Safari or Firefox.');
+      const names=[
+        'build/index.html.gz.b64.part00',
+        'build/index.html.gz.b64.part01a',
+        'build/index.html.gz.b64.part01b',
+        'build/index.html.gz.b64.part02',
+        'build/index.html.gz.b64.part03',
+        'build/index.html.gz.b64.part04',
+        'build/index.html.gz.b64.part05'
+      ];
       const parts=[];
-      for(let i=0;i<6;i++){
-        const name=`build/index.html.gz.b64.part${String(i).padStart(2,'0')}`;
+      for(const name of names){
         const r=await fetch(name,{cache:'no-store'});
         if(!r.ok) throw new Error(`Missing application component: ${name} (${r.status})`);
         parts.push((await r.text()).trim());
