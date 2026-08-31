@@ -19,7 +19,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat build/index.html.gz.b64.part* | base64 --decode | gzip --decompress > /tmp/rheumdx-index.html
+          cat \
+            build/index.html.gz.b64.part00 \
+            build/index.html.gz.b64.part01a \
+            build/index.html.gz.b64.part01b \
+            build/index.html.gz.b64.part02 \
+            build/index.html.gz.b64.part03 \
+            build/index.html.gz.b64.part04 \
+            build/index.html.gz.b64.part05 \
+            | base64 --decode | gzip --decompress > /tmp/rheumdx-index.html
           echo "bf6e9aa8207d9bf667687bebc330bfe1b8ab4907ba6bcdf6da2e058c36e95b5f  /tmp/rheumdx-index.html" | sha256sum --check -
           grep -q "Dictate case" /tmp/rheumdx-index.html
           grep -q "Challenge / refine the reasoning" /tmp/rheumdx-index.html
