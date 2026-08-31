@@ -34,8 +34,10 @@ jobs:
           cp index.html _site/index.html
           touch _site/.nojekyll
 
-      - name: Setup Pages
+      - name: Setup and enable Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
