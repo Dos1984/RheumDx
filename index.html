@@ -40,11 +40,11 @@
       const b64=parts.join('').replace(/\s+/g,'');
       const bin=atob(b64);
       const bytes=new Uint8Array(bin.length);
-      for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
       const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
       const html=await new Response(stream).text();
-      if(!html.toLowerCase().includes('<!doctype html')&&!html.toLowerCase().includes('<html')) throw new Error('Application package did not decode to HTML.');
-      const patched=html.replace(/<\/body>/i,'<script src="v13.patch.js"><\/script><script src="v14.patch.js"><\/script><script src="v15.patch.js"><\/script><script src="v16.patch.js"><\/script><script src="v17.patch.js"><\/script><script src="v18.patch.js"><\/script><script src="v19.patch.js"><\/script><script src="v20.patch.js"><\/script></body>');
+      if(!html.toLowerCase().includes('<!doctype html')&&!html.toLowerCase().includes('<html'))throw new Error('Application package did not decode to HTML.');
+      const patched=html.replace(/<\/body>/i,'<script src="v13.patch.js"><\/script><script src="v14.patch.js"><\/script><script src="v15.patch.js"><\/script><script src="v16.patch.js"><\/script><script src="v17.patch.js"><\/script><script src="v18.patch.js"><\/script><script src="v19.patch.js"><\/script><script src="v20.patch.js"><\/script><script src="v21.patch.js"><\/script></body>');
       document.open();
       document.write(patched);
       document.close();
