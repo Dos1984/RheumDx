@@ -1,7 +1,7 @@
 (function(){
 'use strict';
 const css=document.createElement('style');css.textContent=`
-.rca3-explainBtn{width:100%;border:1.5px solid var(--teal);background:#f7fbfb;color:var(--navy);border-radius:11px;padding:11px 12px;font-weight:850;text-align:left;margin:9px 0 4px}.rca3-explainBtn span{float:right;color:var(--teal)}.rca3-explain{display:none;border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 13px;margin:7px 0 10px;font-size:12.8px;line-height:1.5}.rca3-explain.open{display:block}.rca3-explain h4{margin:0 0 8px;color:var(--navy);font-size:14px}.rca3-good,.rca3-wrong,.rca3-principle{border-radius:9px;padding:9px 10px;margin:7px 0}.rca3-good{background:#edf8f2}.rca3-wrong{background:#fff3f2}.rca3-principle{background:#eef6f8}.rca3-good b{color:var(--green)}.rca3-wrong b{color:var(--red)}.rca3-principle b{color:var(--teal)}
+.rca3-explainBtn{display:block;width:100%;border:1.5px solid var(--teal);background:#f7fbfb;color:var(--navy);border-radius:11px;padding:12px 13px;font-weight:850;text-align:left;margin:10px 0 5px;cursor:pointer}.rca3-explainBtn span{float:right;color:var(--teal)}.rca3-explain{display:none;border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 13px;margin:7px 0 12px;font-size:12.8px;line-height:1.5}.rca3-explain.open{display:block}.rca3-explain h4{margin:0 0 8px;color:var(--navy);font-size:14px}.rca3-good,.rca3-wrong,.rca3-principle{border-radius:9px;padding:9px 10px;margin:7px 0}.rca3-good{background:#edf8f2}.rca3-wrong{background:#fff3f2}.rca3-principle{background:#eef6f8}.rca3-good b{color:var(--green)}.rca3-wrong b{color:var(--red)}.rca3-principle b{color:var(--teal)}
 `;document.head.appendChild(css);
 function clean(s){return String(s||'').replace(/\s+/g,' ').trim()}
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
@@ -18,6 +18,29 @@ function rationale(q,correct,chosen,reveal){
  let wrong='';if(chosen&&clean(chosen)!==clean(correct)){wrong='Your selected option is understandable, but it is weaker because it either delays a higher-yield discriminator, narrows the assessment too early, or does not directly answer the clinical decision at this stage.';if(/defer associated-system questions/i.test(chosen))wrong='Deferring associated-system questions is weaker because features such as psoriasis, uveitis, IBD or a preceding GI/GU infection may be the key clues that separate the leading inflammatory arthritis diagnoses before imaging or serology.';if(/broad autoimmune panel/i.test(chosen))wrong='A broad autoimmune panel at this stage risks false-positive or incidental results and does not substitute for defining the clinical phenotype first.';}
  return{why,wrong,principle}
 }
-function enhance(){document.querySelectorAll('.rca2-feedback').forEach(fb=>{if(fb.dataset.rca3==='1')return;const card=fb.closest('.rca2-card')||fb.parentElement;const q=clean(card?.querySelector('.rca2-q')?.textContent);const reveal=clean(card?.querySelector('.rca2-reveal')?.textContent);const correct=clean(card?.querySelector('.rca2-opt.good')?.textContent);const chosen=clean(card?.querySelector('.rca2-opt.bad')?.textContent)||clean(card?.querySelector('.rca2-opt.good')?.textContent);if(!q||!correct)return;fb.dataset.rca3='1';const r=rationale(q,correct,chosen,reveal);const b=document.createElement('button');b.type='button';b.className='rca3-explainBtn';b.innerHTML='💡 Why is this the best answer?<span>⌄</span>';const p=document.createElement('div');p.className='rca3-explain';p.innerHTML='<h4>Answer explanation</h4><div class="rca3-good"><b>Why this answer is stronger</b><br>'+esc(r.why)+'</div>'+(r.wrong?'<div class="rca3-wrong"><b>Why the selected alternative is weaker</b><br>'+esc(r.wrong)+'</div>':'')+'<div class="rca3-principle"><b>Clinical reasoning principle</b><br>'+esc(r.principle)+'</div>';b.onclick=()=>{const open=p.classList.toggle('open');b.querySelector('span').textContent=open?'⌃':'⌄';if(open)setTimeout(()=>p.scrollIntoView({behavior:'smooth',block:'nearest'}),60)};fb.insertAdjacentElement('afterend',b);b.insertAdjacentElement('afterend',p)})}
-let tm;new MutationObserver(()=>{clearTimeout(tm);tm=setTimeout(enhance,80)}).observe(document.body,{subtree:true,childList:true,classList:true});setTimeout(enhance,300);
+function enhance(){
+ const player=document.getElementById('player'); if(!player) return;
+ player.querySelectorAll('.rca2-feedback').forEach(fb=>{
+  if(fb.dataset.rca3==='1')return;
+  const card=fb.closest('.rca2-card')||fb.parentElement;
+  const q=clean(card?.querySelector('.rca2-q')?.textContent);
+  const reveal=clean(card?.querySelector('.rca2-reveal')?.textContent);
+  const correctEl=card?.querySelector('.rca2-opt.good');
+  const chosenEl=card?.querySelector('.rca2-opt.bad')||correctEl;
+  const correct=clean(correctEl?.textContent), chosen=clean(chosenEl?.textContent);
+  if(!q||!correct)return;
+  fb.dataset.rca3='1';
+  const r=rationale(q,correct,chosen,reveal);
+  const b=document.createElement('button'); b.type='button'; b.className='rca3-explainBtn'; b.setAttribute('aria-expanded','false'); b.innerHTML='💡 Explain this answer<span>⌄</span>';
+  const p=document.createElement('div'); p.className='rca3-explain';
+  p.innerHTML='<h4>Why is this the best answer?</h4><div class="rca3-good"><b>Why this answer is stronger</b><br>'+esc(r.why)+'</div>'+(r.wrong?'<div class="rca3-wrong"><b>Why your selected option is weaker</b><br>'+esc(r.wrong)+'</div>':'')+'<div class="rca3-principle"><b>Clinical reasoning principle</b><br>'+esc(r.principle)+'</div>';
+  b.addEventListener('click',()=>{const open=p.classList.toggle('open');b.setAttribute('aria-expanded',open?'true':'false');b.querySelector('span').textContent=open?'⌃':'⌄';if(open)setTimeout(()=>p.scrollIntoView({behavior:'smooth',block:'nearest'}),50)});
+  fb.insertAdjacentElement('afterend',b); b.insertAdjacentElement('afterend',p);
+ });
+}
+let tm;
+const obs=new MutationObserver(()=>{clearTimeout(tm);tm=setTimeout(enhance,40)});
+obs.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
+document.addEventListener('click',e=>{if(e.target.closest('.rca2-opt'))setTimeout(enhance,30)},true);
+setTimeout(enhance,250);
 })();
