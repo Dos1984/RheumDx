@@ -24,7 +24,7 @@
       if(!r.ok) throw new Error('Could not load the case-learning package.');
       let html=await r.text();
       html=html.replace(/RheumSim/g,'Rheum Case Assist');
-      html=html.replace(/<\/body>/i,'<script src="rheumcaseassist.patch.js"><\/script></body>');
+      html=html.replace(/<\/body>/i,'<script src="rheumcaseassist.patch.js"><\/script><script src="rheumcaseassist.v2.patch.js"><\/script></body>');
       document.open();document.write(html);document.close();
     }catch(err){
       status.innerHTML='<h1>Rheum Case Assist could not load</h1><p class="muted">'+String(err.message||err)+'</p><p class="muted">Please refresh once and try again.</p>';
