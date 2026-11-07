@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RheumDx Patient Link | Synthetic beta</title>
+<style>
+:root{color:#122e46;background:#f3f7fa;font:16px system-ui,sans-serif}*{box-sizing:border-box}
+body{margin:0}header{background:#12334e;color:white;padding:2rem max(1rem,calc((100% - 70rem)/2))}
+header p,h1{margin:.35rem 0}main{max-width:72rem;margin:auto;padding:1rem}
+section,aside{padding:1.15rem;background:white;border:1px solid #cbdbe4;border-radius:12px;margin-bottom:1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,23rem),1fr));gap:1rem}
+h2,h3{margin-top:0}button,input,select,textarea{font:inherit}button{cursor:pointer;background:#006c69;color:white;border:0;border-radius:7px;padding:.65rem .85rem;margin:.25rem .25rem .25rem 0}button:disabled{opacity:.5;cursor:wait}button.secondary{background:#e8f1f5;color:#12334e}
+textarea,select,input:not([type=checkbox]){display:block;width:100%;margin:.35rem 0 .8rem;padding:.5rem;border:1px solid #8ba4b4;border-radius:5px;background:white;color:inherit}textarea{min-height:7rem}img{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{display:block}.notice{background:#e6f5f2;padding:.7rem;border-radius:6px}a{color:#006765}
+fieldset{min-width:0;border:1px solid #cbdbe4;border-radius:8px;margin:1rem 0;padding:.9rem}legend{font-weight:700}
+.guide{margin:0 0 .75rem}.guide summary{cursor:pointer;color:#006765}.eye{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;border:1px solid;border-radius:50%;margin-right:.3rem}
+.candidate{display:block;margin:.4rem 0}.photo{display:inline-grid;margin:.3rem}.photo img,.review-photo{width:145px;height:105px;object-fit:contain;background:#f3f7fa}dd pre{font:inherit;margin:.15rem 0 .55rem}
+</style>
+<header><small>REFERRAL TO TREATMENT IN RHEUMATOLOGY</small><h1>RheumDx Patient Link</h1><p>Synthetic demonstration · use fictional letters and answers only</p></header>
+<main id="app"></main>
+<script id="workflow">
+const questions = [
+  ['symptoms','Which joints or areas are bothering you, and when did it start?','Tell us which areas are affected and whether it started suddenly or gradually.'],
+  ['swelling','Have any joints looked or felt swollen?','Tell us which joints, when it happens and how long it lasts.'],
+  ['stiffness','Do you feel stiff when you wake up or after sitting?','If yes, say how long it lasts and whether moving helps.'],
+  ['toe','Has a whole finger or toe ever swollen?','When a whole finger or toe swells from base to tip, clinicians may call this dactylitis. Tell us when it happened and how long it lasted.','https://dermnetnz.org/imagedetail/5333-psoriatic-dactylitis'],
+  ['skin','Have you ever been told you have psoriasis, or noticed persistent scaly patches?','Psoriasis can cause thick or raised scaly patches. Their colour can vary with skin tone. Common sites include the scalp, elbows and knees. Nails can develop small dents or lift from the nail bed. Tell us where and when you noticed changes.','https://dermnetnz.org/topics/psoriasis'],
+  ['back','Have you had ongoing back or buttock pain?','Tell us when it started, whether it wakes you and what happens with movement or rest.'],
+  ['heel','Have you had heel pain or pain where a tendon meets a bone?','For example, pain at the back of the heel or underneath it. Tell us where and when it hurts.'],
+  ['eyes','Have you ever been treated for inflammation inside the eye?','Some people are told they have uveitis or iritis. If you remember, tell us the diagnosis and when it happened.'],
+  ['bowel','Have you been diagnosed with Crohn’s disease or ulcerative colitis?','These are types of inflammatory bowel disease. You can also describe any bowel symptoms you want the team to know about.'],
+  ['flares','Have you had sudden episodes of joint pain and swelling?','Tell us which joint was affected and how long the episode lasted.'],
+  ['family','Do any close relatives have relevant joint, skin or bowel conditions?','You can mention the relationship and condition, such as a parent with psoriasis.'],
+  ['impact','How are your symptoms affecting daily activities?','Examples include dressing, walking, sleep, work and caring for others.'],
+  ['tests','Have you already had tests or treatment for these symptoms?','Tell us what was done, roughly when, and whether any treatment helped.'],
+  ['meds','What medicines are you currently taking?','Include medicines taken regularly or as needed, including supplements. Add the strength and how often you take each one if you know. You can photograph fictional labels or upload a fictional list.'],
+  ['other','Is there anything else you want the team to know?','Tell us about any support you need or a question you want to raise.']
+];
+const baseKeys = ['symptoms','toe','skin'];
+const allowedKeys = keys => questions.filter(([key]) => keys.includes(key)).map(([key])=>key);
+function validInvitation(value) {
+  return value && typeof value.token === 'string' && /^[a-f0-9-]{36}$/.test(value.token) &&
+    Array.isArray(value.keys) && value.keys.length > 0 &&
+    allowedKeys(value.keys).length === value.keys.length;
+}
+function acceptPacket(records, packet) {
+  if (!validInvitation(packet) || !['submit','declined'].includes(packet.intent)) throw Error('Invalid response file.');
+  const referral = [...records.values()].find(r => r.invite?.token === packet.token);
+  if (!referral || referral.invite.keys.join() !== packet.keys.join()) throw Error('This response does not match an active invitation.');
+  if (referral.invite.used) throw Error('This invitation already has an imported response.');
+  const images = {};
+  for (const key of packet.keys) {
+    const files = packet.images?.[key] || [];
+    if (!Array.isArray(files) || files.length > 3 || files.some(url =>
+      typeof url !== 'string' || url.length > 700000 || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url))) throw Error('Unsupported response attachment.');
+    if (files.length) images[key] = files;
+  }
+  recordResponse(records,referral.id,packet.intent,packet.answers || {},packet.keys,images);
+  referral.invite.used = true;
+  return referral.id;
+}
+function makeReferral(id, source, extracted) {
+  return {id, source, extracted, reviewedText: null, response: null, route: null};
+}
+function recordResponse(records, id, intent, input, keys = baseKeys, images = {}) {
+  const referral = records.get(id);
+  if (!referral) throw Error('Unknown referral');
+  const answers = intent === 'declined' ? {} :
+    Object.fromEntries(keys.map(key => [key, String(input[key] || '').trim().slice(0,4000)]));
+  const status = intent === 'declined' ? intent :
+    keys.every(key => answers[key] || images[key]?.length) ? 'complete' : 'incomplete';
+  referral.response = {status, answers, keys, received: new Date().toISOString().slice(0,10), images: intent === 'declined' ? {} : images};
+  referral.route = null;
+  referral.patientReviewed = false;
+  return status;
+}
+function reviewReferral(referral, text, route, analysis = '') {
+  if (!text.trim()) throw Error('Enter a checked transcription before saving.');
+  if (!['usual','clinician'].includes(route)) throw Error('Choose a review outcome.');
+  referral.reviewedText = text.trim();
+  referral.route = route;
+  referral.analysis = analysis.trim().slice(0, 4000);
+}
+function patientReceipt(referral) {
+  return {
+    complete: 'Thank you. Your practice answers were recorded.',
+    incomplete: 'Your practice answers were saved. Usual triage is still available.',
+    declined: 'Your choice was recorded. Usual triage is still available.'
+  }[referral.response?.status] || '';
+}
+</script>
+<script>
+const records = new Map();
+let next = 1, active, view = 'staff', invitation, busy = false, message = '';
+const app = document.querySelector('#app');
+let patientLink = null, packet = null;
+function decodeLink() {
+  if (!location.hash.startsWith('#intake=')) return;
+  try {
+    const value = JSON.parse(decodeURIComponent(location.hash.slice(8)));
+    if (!validInvitation(value)) throw Error();
+    patientLink = value; view = 'linked';
+  } catch {view = 'invalid';}
+}
+function linkFor(value) {
+  return location.href.split('#')[0] + '#intake=' + encodeURIComponent(JSON.stringify({token:value.token,keys:value.keys}));
+}
+function downloadResponse(value) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value)],{type:'application/json'}));
+  const anchor = document.createElement('a');
+  anchor.href=url; anchor.download='rheumdx-patient-response.json'; anchor.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+const sample = 'SYNTHETIC LETTER\nPlease assess persistent swelling of both hands. Symptoms started 8 weeks ago. Morning stiffness lasts about an hour. CRP reported as 14 mg/L. RF and anti-CCP results were not supplied.';
+const html = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const byId = id => document.getElementById(id);
+function add(source, extracted) {
+  const id = 'AA-DEMO-' + String(next++).padStart(3,'0');
+  records.set(id, makeReferral(id, source, extracted));
+  active = id;
+  message = 'Referral received. Review the transcription against its source.';
+}
+function ocrLibrary() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    script.onload = () => resolve(window.Tesseract);
+    script.onerror = () => {script.remove(); reject(Error('OCR assets could not load.'));};
+    document.head.append(script);
+  });
+}
+function guide(key, help, photo) {
+  const art = key === 'toe' ? '<svg viewBox="0 0 260 85" width="260" role="img" aria-label="Illustration comparing a typical finger and a finger swollen along its length"><rect x="25" y="8" width="23" height="48" rx="11" fill="#d7a98d"/><rect x="158" y="4" width="44" height="55" rx="21" fill="#bb795d"/><text x="4" y="78" font-size="13">Typical finger</text><text x="123" y="78" font-size="13">Whole finger swelling</text></svg>' :
+  key === 'skin' ? '<svg viewBox="0 0 260 80" width="260" role="img" aria-label="Illustration of scaly patches on two skin tones"><rect width="120" height="72" rx="9" fill="#e2ab90"/><rect x="130" width="120" height="72" rx="9" fill="#754d40"/><ellipse cx="60" cy="35" rx="29" ry="19" fill="#b65b60"/><ellipse cx="190" cy="35" rx="29" ry="19" fill="#a8819a"/><path d="M45 35h12m3-5h14m-20 11h17m104-6h12m3-5h14m-20 11h17" stroke="#faf0e6" stroke-width="3"/></svg>' : '';
+  return `<details class="guide"><summary aria-label="See examples and information"><span class="eye" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg></span> See examples and information</summary><p>${help}</p>${art}${photo ? `<p><a href="${photo}" target="_blank" rel="noopener noreferrer">View clinical photographs on DermNet</a></p>` : ''}</details>`;
+}
+function field([key,label,help,photo], answers) {
+  return `<fieldset><legend>${label}</legend>${guide(key,help,photo)}
+    ${['swelling','stiffness','toe','skin','back','heel','eyes','bowel','flares','family','tests'].includes(key)?`<div aria-label="Quick answers">${['Yes','No','Not sure'].map(answer=>`<button type="button" class="secondary" data-quick="${key}" value="${answer}">${answer}</button>`).join('')}</div>`:''}
+    <label>Your answer or details<textarea id="answer-${key}" name="${key}" maxlength="4000" placeholder="Type here, or use dictation">${html(answers?.[key])}</textarea></label>
+    <button type="button" class="secondary" data-dictate="${key}">Dictate</button>
+    <label>Take a photo<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-photo="${key}"></label>
+    <label>${key==='meds'?'Upload label photos or a text medication list':'Choose photos'}<input type="file" accept="image/jpeg,image/png,image/webp${key==='meds'?',.txt':''}" multiple data-photo="${key}"></label>
+    ${key==='meds'?'<button id="read-labels" type="button" class="secondary">Read names from labels</button><div id="candidates"></div>':''}
+    <div id="files-${key}"></div><small id="status-${key}" role="status"></small></fieldset>`;
+}
+function medicationCandidates(text) {
+  const lines = text.split(/\r?\n/);
+  return lines.flatMap(line => {
+    const explicit = line.match(/^\s*(?:medicine|medication|drug)\s*:\s*([a-z][a-z -]{1,50}?)(?=\s+\d|$)/i);
+    const strength = line.match(/^\s*([a-z][a-z -]{1,50}?)\s+\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units)\b/i);
+    const match = explicit || strength;
+    return match ? [match[1].trim()] : [];
+  });
+}
+async function photoData(file) {
+  if (file.size > 12*1024*1024 || !['image/jpeg','image/png','image/webp'].includes(file.type)) throw Error('Choose a JPG, PNG or WebP under 12 MB.');
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale=Math.min(1,1200/Math.max(bitmap.width,bitmap.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(bitmap.width*scale));
+    canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    const url=canvas.toDataURL('image/jpeg',.8);
+    if(url.length>700000) throw Error('Photo is too large. Try a smaller image.');
+    return url;
+  } finally {bitmap.close();}
+}
+function patient() {
+  const linked = view === 'linked';
+  const r = linked ? null : records.get(invitation);
+  if (!linked && !r) return;
+  const keys = linked ? patientLink.keys : (r.invite?.keys || baseKeys);
+  const images = structuredClone(r?.response?.images || {});
+  let pending=0;
+  app.innerHTML = `<section><small>SIMULATED PATIENT VIEW</small><h2>A few questions from the rheumatology team</h2>
+    <p>Answer what you can. You can skip questions or use usual triage if you prefer or need help.</p>
+    <p>Use fictional information and photos in this demo. Leave names and record numbers out of photos and answers. Dictation may use your browser provider’s speech service.</p>
+    <p id="receipt" class="notice" role="status">${html(r ? patientReceipt(r) || 'Enter fictional answers only.' : 'This is a practice form. Download the response file when finished.')}</p>
+    <form id="history">${questions.filter(([key])=>keys.includes(key)).map(q=>field(q,r?.response?.answers)).join('')}
+    <button type="submit">${linked?'Prepare response file':'Submit available answers'}</button><button type="button" class="secondary" id="decline">Skip questionnaire</button></form>
+    ${linked?'<button id="download" hidden>Download response file</button>':'<button class="secondary" id="return">Return to staff demo</button>'}</section>`;
+  function renderFiles(key) {
+    const el=byId('files-'+key);
+    el.innerHTML=(images[key]||[]).map((url,i)=>`<span class="photo"><img src="${url}" alt="Fictional attachment ${i+1}"><button type="button" class="secondary" data-remove="${i}">Remove photo ${i+1}</button></span>`).join('');
+    el.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{images[key].splice(Number(button.dataset.remove),1);renderFiles(key);});
+  }
+  keys.forEach(renderFiles);
+  function finish(intent, answers) {
+    if(pending){byId('receipt').textContent='Please wait for the current photo or label to finish.';return;}
+    if(linked){
+      packet={...patientLink,intent,answers,images:intent==='declined'?{}:structuredClone(images)};
+      byId('download').hidden=false;
+      byId('receipt').textContent='Your practice response is ready to download. Return it using the agreed demonstration method.';
+    } else {
+      recordResponse(records,r.id,intent,answers,keys,images);
+      render();
+    }
+  }
+  byId('history').onsubmit=e=>{e.preventDefault();finish('submit',Object.fromEntries(new FormData(e.currentTarget)));};
+  byId('decline').onclick=()=>finish('declined',{});
+  if(linked) byId('download').onclick=()=>downloadResponse(packet);
+  else byId('return').onclick=()=>{view='staff';active=r.id;message='';render();};
+  app.querySelectorAll('[data-quick]').forEach(button=>button.onclick=()=>{
+    const area=byId('answer-'+button.dataset.quick);
+    const details=area.value.replace(/^(?:Yes|No|Not sure)(?:\n|$)/,'');
+    area.value=[button.value,details].filter(Boolean).join('\n').slice(0,4000);
+    area.focus();
+  });
+  app.querySelectorAll('[data-dictate]').forEach(button=>button.onclick=()=>{
+    const key=button.dataset.dictate,status=byId('status-'+key),area=byId('answer-'+key);
+    const Speech=window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!Speech){status.textContent='Browser dictation is unavailable. You can type or use your keyboard microphone.';return;}
+    const recognizer=new Speech();
+    recognizer.lang='en-IE';button.disabled=true;
+    recognizer.onresult=e=>{area.value=(area.value+' '+e.results[0][0].transcript).trim().slice(0,4000);status.textContent='Check the dictated text.';};
+    recognizer.onerror=()=>{status.textContent='Dictation was unavailable. You can type instead.';};
+    recognizer.onend=()=>{button.disabled=false;};
+    try{recognizer.start();status.textContent='Listening…';}catch{button.disabled=false;status.textContent='Could not start dictation.';}
+  });
+  app.querySelectorAll('[data-photo]').forEach(input=>input.onchange=async()=>{
+    const key=input.dataset.photo,status=byId('status-'+key);
+    pending++;input.disabled=true;
+    try{
+      for(const file of input.files){
+        if(key==='meds' && /\.txt$/i.test(file.name)){
+          if(file.size>16000)throw Error('Choose a smaller text medication list.');
+          const area=byId('answer-meds');
+          area.value=[area.value,(await file.text()).trim()].filter(Boolean).join('\n').slice(0,4000);
+        } else {
+          images[key] ||= [];
+          if(images[key].length>=3)throw Error('You can attach up to three photos per question.');
+          const url=await photoData(file);
+          if(images[key].length>=3)throw Error('You can attach up to three photos per question.');
+          images[key].push(url);renderFiles(key);
+        }
+      }
+      status.textContent='Added. Check your answer and photos.';
+    }catch(err){status.textContent=err.message;}
+    finally{pending--;input.disabled=false;input.value='';}
+  });
+  if(byId('read-labels'))byId('read-labels').onclick=async e=>{
+    const button=e.currentTarget,status=byId('status-meds'),host=byId('candidates');
+    if(!images.meds?.length){status.textContent='Add a fictional medication label photo first.';return;}
+    pending++;button.disabled=true;host.textContent='';status.textContent='Reading label photos…';
+    try{
+      const engine=await ocrLibrary(), names=new Set();
+      for(const image of [...images.meds]){
+        const result=await engine.recognize(image,'eng');
+        medicationCandidates(result.data.text).forEach(name=>names.add(name));
+      }
+      status.textContent=names.size?'Select the names you recognise and check whether you currently take them.':'No candidate names found. Enter the medicines you take or keep the photos for review.';
+      if(names.size){
+        host.innerHTML=[...names].map(name=>`<label class="candidate"><input type="checkbox" value="${html(name)}"> ${html(name)}</label>`).join('')+
+          '<button type="button" id="confirm-names">Add selected names</button>';
+        byId('confirm-names').onclick=()=>{
+          const area=byId('answer-meds');
+          const chosen=[...host.querySelectorAll('input:checked')].map(item=>item.value);
+          area.value=[...new Set([...area.value.split('\n'),...chosen].filter(Boolean))].join('\n').slice(0,4000);
+        };
+      }
+    }catch{status.textContent='Label reading was unavailable. Type the names or keep the photos for review.';}
+    finally{pending--;button.disabled=false;}
+  };
+}
+function staff() {
+  const r = records.get(active);
+  app.innerHTML = `<div class="grid"><section><p><a href="./index.html">← Back to RheumDx</a></p><h2>1 · Receive referral</h2><button id="sample" ${busy?'disabled':''}>Load synthetic letter</button>
+    <form id="upload"><label>Fictional letter (.txt) or photo (.png, .jpg, .webp)<input id="file" type="file" accept=".txt,image/png,image/jpeg,image/webp" required></label>
+    <button ${busy?'disabled':''}>Import and extract</button></form><small>Photo OCR uses downloadable browser OCR assets. Plain-text letters and the sample work offline. Records clear on reload.</small></section>
+    <section><h2>2 · Link the questionnaire</h2><label>Referral<select id="referrals" ${busy?'disabled':''}><option value="">Select a referral</option>
+    ${[...records.keys()].map(id => `<option ${id === active?'selected':''}>${id}</option>`).join('')}</select></label>
+    <button id="invite" ${r&&!busy?'':'disabled'}>Open simulated patient invitation</button><small>This opens a same-device preview. To share a tailored link, save the clinician review and use step 4.</small></section></div>
+    <p class="notice" role="status">${html(message || 'Select or import a synthetic referral.')}</p>
+    ${r ? reviewPanel(r) + invitePanel(r) + handoffPanel(r) : ''}`;
+  byId('sample').onclick = () => {add({name:'Synthetic letter', text:sample},sample);render();};
+  byId('referrals').onchange = e => {active = e.target.value;message = '';render();};
+  byId('invite').onclick = () => {invitation = r.id;view = 'patient';render();};
+  byId('upload').onsubmit = importLetter;
+  if(r?.reviewedText) {
+    byId('copy-case').onclick=async()=>{
+      const field=byId('handoff');field.select();
+      try{await navigator.clipboard.writeText(field.value);byId('copy-status').textContent='Copied. Paste into the RheumDx case box when ready.';}
+      catch{byId('copy-status').textContent='Copy the selected text manually.';}
+    };
+    byId('invite-build').onsubmit = e => {
+      e.preventDefault();
+      const keys=[...e.currentTarget.querySelectorAll('input[name=question]:checked')].map(i=>i.value);
+      if(!keys.length){byId('invite-status').textContent='Select at least one question.';return;}
+      if(!globalThis.crypto?.randomUUID){byId('invite-status').textContent='Open this demo over HTTPS or on localhost to create an invitation.';return;}
+      r.invite={token:crypto.randomUUID(),keys,used:false};
+      message='Invitation generated for '+r.id+'. A new link replaces the previous invitation.';
+      render();
+    };
+    if(r.invite)byId('copy-link').onclick=async()=>{
+      const input=byId('patient-link');input.select();
+      try{await navigator.clipboard.writeText(input.value);byId('invite-status').textContent='Link copied.';}
+      catch{byId('invite-status').textContent='Copy the selected link manually.';}
+    };
+    byId('return-file').onchange=async e=>{
+      const file=e.target.files[0];
+      if(!file)return;
+      try {
+        if(file.size>33*1024*1024)throw Error('Response file is too large.');
+        active=acceptPacket(records,JSON.parse(await file.text()));
+        message='Response linked to '+active+'. Review the answers and attachments.';
+        render();
+      }catch(err){byId('invite-status').textContent=err.message;e.target.value='';}
+    };
+  }
+
+  if (r) byId('review').onsubmit = e => {
+    e.preventDefault();
+    try {
+      const prior = byId('prior-record').value.trim(), priorSource = byId('prior-source').value.trim();
+      if(prior && !priorSource)throw Error('Enter the source of the prior record.');
+      reviewReferral(r,byId('transcript').value,byId('route').value,byId('analysis-note').value);
+      Object.assign(r,{prior,priorSource,priorDate:byId('prior-date').value,
+        referralDate:byId('referral-date').value,discrepancies:byId('gaps').value.trim(),
+        patientReviewed:!!byId('patient-checked')?.checked});
+      message = r.route === 'usual' ? 'Saved for usual triage.' : 'Saved for clinician triage.';
+      render();
+    } catch(err) {byId('reviewError').textContent=err.message;}
+  };
+}
+function handoffPanel(r) {
+  if (!r.reviewedText) return '';
+  return `<section><h2>5 · Prepare the verified record for RheumDx</h2>
+  <p>Copy the verified text into the RheumDx case box when you are ready to analyse. The diagnostic tab keeps its current draft. Usual triage can proceed while answers are outstanding.</p>
+  <label>Verified case text<textarea id="handoff" readonly>${html(verifiedCase(r))}</textarea></label>
+  <button id="copy-case" type="button">Copy verified case text</button>
+  <p id="copy-status" role="status"></p></section>`;
+}
+function verifiedCase(r) {
+  const date = value => value || 'date not supplied';
+  const lines = [`Referral letter · ${date(r.referralDate)}\n${r.reviewedText}`];
+  if (r.prior) lines.push(`Prior record · ${r.priorSource} · ${date(r.priorDate)}\n${r.prior}`);
+  if (r.patientReviewed && r.response?.status !== 'declined') {
+    const answers = r.response.keys.filter(key => r.response.answers[key]).map(key =>
+      `${questions.find(q => q[0] === key)[1]} ${r.response.answers[key]}`);
+    if (answers.length) lines.push(`Patient-reported history · received ${date(r.response.received)}\n${answers.join('\n')}`);
+  }
+  if (r.discrepancies) lines.push(`Clinician review · discrepancies or gaps\n${r.discrepancies}`);
+  return lines.join('\n\n');
+}
+function invitePanel(r) {
+  if(!r.reviewedText)return '<section><h2>4 · Request additional information</h2><p>Save the reviewed transcription first.</p></section>';
+  return `<section><h2>4 · Request additional information</h2><p>After your review and analysis, select the questions that would clarify this referral. The link contains only a demo token and question codes.</p>
+  <form id="invite-build"><fieldset><legend>Questions for this referral</legend>${questions.map(([key,label])=>`<label class="candidate"><input type="checkbox" name="question" value="${key}" ${(r.invite?.keys||baseKeys).includes(key)?'checked':''}> ${label}</label>`).join('')}</fieldset>
+  <button>Generate patient link</button></form>
+  ${r.invite?`<label>Patient link<input id="patient-link" readonly value="${html(linkFor(r.invite))}"></label>
+  <button id="copy-link" class="secondary">Copy link</button> <a href="${html(linkFor(r.invite))}" target="_blank" rel="noopener">Open patient form</a>
+  <p>${r.invite.used?'Response imported.':'Awaiting response.'} For a cross-device demo, use the same HTTPS-hosted page on both devices. Keep this staff tab open to import the patient’s downloaded practice response.</p>`:''}
+  <label>Import a returned practice response<input id="return-file" type="file" accept=".json,application/json"></label>
+  <p id="invite-status" role="status"></p></section>`;
+}
+function reviewPanel(r) {
+  const response = r.response;
+  return `<section><small>CLINICIAN REVIEW · ${r.id}</small><h2>3 · Verify sources and record next step</h2>
+    <div class="grid"><div><h3>Original letter</h3><p>${html(r.source.name)}</p>
+    ${r.source.url ? `<img src="${r.source.url}" alt="Original fictional letter photo">` : `<pre>${html(r.source.text)}</pre>`}</div>
+    <div><h3>Patient history</h3><p>Status · ${html(response?.status || 'awaiting response')}</p>
+    <dl>${questions.filter(([key])=>(response?.keys || r.invite?.keys || baseKeys).includes(key)).map(([key,label]) => `<dt>${label}</dt><dd><pre>${html(response?.answers[key] || 'No written answer')}</pre>${(response?.images?.[key]||[]).map((url,i)=>`<img class="review-photo" src="${url}" alt="Fictional attachment ${i+1}">`).join('')}</dd>`).join('')}</dl>
+    <p>Existing results are limited to material in the source letter.</p></div></div>
+    <details><summary>View original extraction</summary><pre>${html(r.extracted || 'No text extracted. Transcribe from the source.')}</pre></details>
+    <form id="review"><label>Check and correct the transcription<textarea id="transcript" required>${html(r.reviewedText ?? r.extracted)}</textarea></label>
+    <label>Referral letter date, if known<input id="referral-date" type="date" value="${html(r.referralDate)}"></label>
+    <fieldset><legend>Prior letters, results or medicines</legend>
+    <label>Source, such as a fictional GP results letter<input id="prior-source" maxlength="160" value="${html(r.priorSource)}"></label>
+    <label>Source date, if known<input id="prior-date" type="date" value="${html(r.priorDate)}"></label>
+    <label>Verified information from that source<textarea id="prior-record" maxlength="4000">${html(r.prior)}</textarea></label></fieldset>
+    <label>Discrepancies or gaps to clarify<textarea id="gaps" maxlength="2000" placeholder="For example, two sources list different medicine strengths.">${html(r.discrepancies)}</textarea></label>
+    ${response && response.status!=='declined'?`<label><input id="patient-checked" type="checkbox" ${r.patientReviewed?'checked':''}> I reviewed the patient answers for inclusion as patient-reported history.</label><br>`:''}
+    <label>Clinician analysis or questions to clarify<textarea id="analysis-note" maxlength="4000" placeholder="Optional private note. Use this to choose follow-up questions.">${html(r.analysis)}</textarea></label>
+    <label>Review outcome<select id="route"><option value="">Choose an outcome</option>
+    <option value="usual" ${r.route==='usual'?'selected':''}>Continue with usual triage</option>
+    <option value="clinician" ${r.route==='clinician'?'selected':''}>Ready for clinician triage</option></select></label>
+    <label><input type="checkbox" required> I checked the transcription against the original.</label><br>
+    <button ${busy?'disabled':''}>Save clinician review</button><p id="reviewError" role="alert"></p></form>
+    <aside><strong>Clinician-only decision support</strong><p>Suggestion generation is disabled in this increment.</p></aside></section>`;
+}
+async function importLetter(event) {
+  event.preventDefault();
+  if (busy) return;
+  const file = byId('file').files[0];
+  if (!file) return;
+  const plain = /\.txt$/i.test(file.name);
+  if ((!plain && !['image/png','image/jpeg','image/webp'].includes(file.type)) || file.size > 8*1024*1024) {
+    message='Choose a supported fictional letter up to 8 MB.';render();return;
+  }
+  busy=true;message='Reading fictional letter…';render();
+  try {
+    if (plain) {
+      const text = await file.text();
+      add({name:'Uploaded text letter',text},text);
+    } else {
+      const source = {name:'Uploaded letter photo',url:URL.createObjectURL(file)};
+      try {
+        const engine = await ocrLibrary();
+        const result = await engine.recognize(file,'eng');
+        add(source,result.data.text.trim());
+      } catch {
+        add(source,'');
+        message='Photo retained. OCR was unavailable. Transcribe the fictional letter manually.';
+      }
+    }
+  } catch {
+    message='The letter could not be read.';
+  } finally {
+    busy=false;render();
+  }
+}
+function render(){
+  if(view==='invalid'){app.textContent='This demonstration link is invalid.';return;}
+  if(view==='patient'||view==='linked')patient();else staff();
+}
+decodeLink();
+render();
+</script>
+</html>
