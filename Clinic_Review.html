@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RheumDx Clinic Review</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f7fa;color:#15334b;font:16px system-ui,sans-serif}header,main{padding:1rem;max-width:76rem;margin:auto}header h1{margin:.4rem 0}a{color:#005c69}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,27rem),1fr));gap:1rem;align-items:start}section,fieldset{border:1px solid #b9ccd6;border-radius:.65rem;padding:1rem;background:#fff}fieldset{margin:.9rem 0}legend{font-weight:700}label{display:block;margin:.5rem 0}input,textarea,select,button{font:inherit}textarea,input:not([type=checkbox]),select{width:100%;display:block;margin:.3rem 0 .75rem;padding:.5rem;border:1px solid #8197a5;border-radius:.35rem}textarea{min-height:4.6rem}#preview{min-height:30rem}button{padding:.6rem .8rem;border:0;border-radius:.35rem;background:#006568;color:white;margin:.3rem .35rem .3rem 0;cursor:pointer}small{display:block}.note{background:#e6f3f1;padding:.7rem;border-radius:.35rem}h2{margin-top:0}
+</style></head>
+<body>
+<header><nav><a href="./index.html">RheumDx diagnostic input</a> · <a href="./Patient_Link.html" target="_blank" rel="noopener">Patient link and referral review</a></nav><h1>Clinic review and letter draft</h1><p class="note">Synthetic beta. Use fictional case references and information. This page holds the draft in this tab until you close or reload it.</p></header>
+<main class="grid">
+<section><h2>Review the visit</h2><form id="review">
+<fieldset><legend>Visit details</legend><label>Fictional case reference<input name="ref" maxlength="40"></label><label>Visit date<input name="date" type="date"></label><label>Visit type<select name="kind"><option>Initial review</option><option>Follow-up</option><option>Remote review</option></select></label></fieldset>
+<fieldset><legend>Background and findings</legend><label>Reviewed source record<textarea name="sources" placeholder="Paste the reviewed handoff from Patient Link, or enter dated referral and prior-record notes."></textarea></label><label><input type="checkbox" name="includeSources"> Include this source record in the draft letter</label><label>Reason for review and interval history<textarea name="history"></textarea></label><label>Function, patient concerns and goals<textarea name="goals"></textarea></label><label>Medicines and reconciliation status<textarea name="medicines" placeholder="Document current use, changes, and unresolved discrepancies."></textarea></label><label>Allergies and reactions<textarea name="allergies"></textarea></label><label>Examination and relevant joint findings<textarea name="exam"></textarea></label><label>Investigations reviewed and pending results<textarea name="investigations"></textarea></label></fieldset>
+<fieldset><legend>Assessment and plan</legend><label>Clinician assessment and uncertainty<textarea name="assessment"></textarea></label><label>Treatment and shared decisions<textarea name="plan"></textarea></label><label>Tests, referrals, timing and who will act<textarea name="actions"></textarea></label><label>Monitoring and ownership<textarea name="monitoring"></textarea></label><label>Education, follow-up and advice discussed<textarea name="followup"></textarea></label></fieldset>
+<button type="submit">Generate draft letter</button></form></section>
+<section><h2>Draft letter</h2><p>Check the draft against your notes and edit it here before copying or downloading.</p><label>Editable letter<textarea id="preview" spellcheck="true"></textarea></label><label><input id="reviewed" type="checkbox"> I have checked this draft for accuracy and outstanding actions.</label><div><button id="copy" type="button">Copy reviewed draft</button><button id="download" type="button">Download reviewed draft (.txt)</button></div><p id="status" role="status"></p></section>
+</main>
+<script>
+const byId = id => document.getElementById(id);
+const review = byId('review'), preview = byId('preview'), checked = byId('reviewed');
+const sections = [
+  ['sources','Reviewed source record'],['history','Reason for review and interval history'],
+  ['goals','Function and patient priorities'],['medicines','Medicines and reconciliation'],
+  ['allergies','Allergies and reactions'],['exam','Examination'],['investigations','Investigations'],
+  ['assessment','Assessment'],['plan','Treatment and shared decisions'],['actions','Actions and ownership'],
+  ['monitoring','Monitoring'],['followup','Education and follow-up']
+];
+function buildLetter(data) {
+  const get = key => String(data[key] || '').trim();
+  const heading = ['Rheumatology clinic letter',get('ref'),get('date'),get('kind')].filter(Boolean).join('\n');
+  const body = sections.filter(([key]) => get(key) && (key !== 'sources' || data.includeSources))
+    .map(([key,label]) => label+'\n'+get(key));
+  return body.length ? [heading,...body].join('\n\n') : '';
+}
+function requireReview() {
+  if (!checked.checked || !preview.value.trim()) {
+    byId('status').textContent = 'Generate or enter a letter and confirm you have reviewed it.';
+    return false;
+  }
+  return true;
+}
+let generatedDraft = '';
+review.onsubmit = event => {
+  event.preventDefault();
+  const draft = buildLetter(Object.fromEntries(new FormData(review)));
+  if (!draft) { byId('status').textContent = 'Enter visit findings or a plan first.'; return; }
+  if (preview.value && preview.value !== generatedDraft && !confirm('Replace your edits with a new draft?')) return;
+  generatedDraft = draft;
+  preview.value = draft;
+  checked.checked = false;
+  byId('status').textContent = 'Draft generated. Review it before export.';
+};
+review.addEventListener('input', () => {
+  checked.checked = false;
+  if (preview.value) byId('status').textContent = 'Visit fields changed. Check the draft against them or regenerate it.';
+});
+preview.addEventListener('input', () => { checked.checked = false; });
+byId('copy').onclick = async () => {
+  if (!requireReview()) return;
+  try {
+    await navigator.clipboard.writeText(preview.value);
+    byId('status').textContent = 'Reviewed draft copied.';
+  } catch {
+    preview.select();
+    byId('status').textContent = 'Copy the selected text manually.';
+  }
+};
+byId('download').onclick = () => {
+  if (!requireReview()) return;
+  const url = URL.createObjectURL(new Blob([preview.value],{type:'text/plain;charset=utf-8'}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'rheumdx-clinic-letter.txt';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+</script>
+</body></html>
