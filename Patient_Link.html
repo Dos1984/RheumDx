@@ -33,6 +33,11 @@ const questions = [
   ['impact','How are your symptoms affecting daily activities?','Examples include dressing, walking, sleep, work and caring for others.'],
   ['tests','Have you already had tests or treatment for these symptoms?','Tell us what was done, roughly when, and whether any treatment helped.'],
   ['meds','What medicines are you currently taking?','Include medicines taken regularly or as needed, including supplements. Add the strength and how often you take each one if you know. You can photograph fictional labels or upload a fictional list.'],
+  ['pain','How much pain have you had over the past week?','Choose 0 for no pain or 10 for the worst pain you can imagine. Add details if useful.'],
+  ['fatigue','How much fatigue have you had over the past week?','Choose 0 for no fatigue or 10 for the worst fatigue you can imagine.'],
+  ['history','What other health conditions or operations have you had?','List any that you think are relevant, with approximate dates if known.'],
+  ['allergies','Do you have any medicine allergies or reactions?','If known, list the medicine and describe what happened. You can say none or not sure.'],
+  ['goals','What would you most like to discuss at your appointment?','For example, a symptom, a concern about your medicines, or an activity you want to get back to.'],
   ['other','Is there anything else you want the team to know?','Tell us about any support you need or a question you want to raise.']
 ];
 const baseKeys = ['symptoms','toe','skin'];
@@ -71,6 +76,7 @@ function recordResponse(records, id, intent, input, keys = baseKeys, images = {}
   referral.response = {status, answers, keys, received: new Date().toISOString().slice(0,10), images: intent === 'declined' ? {} : images};
   referral.route = null;
   referral.patientReviewed = false;
+  referral.patientSummary = '';
   return status;
 }
 function reviewReferral(referral, text, route, analysis = '') {
@@ -138,6 +144,7 @@ function guide(key, help, photo) {
 function field([key,label,help,photo], answers) {
   return `<fieldset><legend>${label}</legend>${guide(key,help,photo)}
     ${['swelling','stiffness','toe','skin','back','heel','eyes','bowel','flares','family','tests'].includes(key)?`<div aria-label="Quick answers">${['Yes','No','Not sure'].map(answer=>`<button type="button" class="secondary" data-quick="${key}" value="${answer}">${answer}</button>`).join('')}</div>`:''}
+    ${['pain','fatigue'].includes(key)?`<label>Choose a score from 0 to 10<select data-score="${key}"><option value="">Choose a score</option>${Array.from({length:11},(_,i)=>`<option value="${i}">${i}</option>`).join('')}</select></label>`:''}
     <label>Your answer or details<textarea id="answer-${key}" name="${key}" maxlength="4000" placeholder="Type here, or use dictation">${html(answers?.[key])}</textarea></label>
     <button type="button" class="secondary" data-dictate="${key}">Dictate</button>
     <label>Take a photo<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-photo="${key}"></label>
@@ -204,6 +211,11 @@ function patient() {
   byId('decline').onclick=()=>finish('declined',{});
   if(linked) byId('download').onclick=()=>downloadResponse(packet);
   else byId('return').onclick=()=>{view='staff';active=r.id;message='';render();};
+  app.querySelectorAll('[data-score]').forEach(select => select.onchange = () => {
+    const area = byId('answer-'+select.dataset.score);
+    const details = area.value.replace(/^Score: (?:[0-9]|10)\/10(?:\n|$)/,'');
+    area.value = [select.value === '' ? '' : 'Score: '+select.value+'/10',details].filter(Boolean).join('\n').slice(0,4000);
+  });
   app.querySelectorAll('[data-quick]').forEach(button=>button.onclick=()=>{
     const area=byId('answer-'+button.dataset.quick);
     const details=area.value.replace(/^(?:Yes|No|Not sure)(?:\n|$)/,'');
@@ -320,7 +332,7 @@ function staff() {
       reviewReferral(r,byId('transcript').value,byId('route').value,byId('analysis-note').value);
       Object.assign(r,{prior,priorSource,priorDate:byId('prior-date').value,
         referralDate:byId('referral-date').value,discrepancies:byId('gaps').value.trim(),
-        patientReviewed:!!byId('patient-checked')?.checked});
+        patientReviewed:!!byId('patient-checked')?.checked,patientSummary:byId('patient-summary')?.value.trim() || ''});
       message = r.route === 'usual' ? 'Saved for usual triage.' : 'Saved for clinician triage.';
       render();
     } catch(err) {byId('reviewError').textContent=err.message;}
@@ -329,19 +341,17 @@ function staff() {
 function handoffPanel(r) {
   if (!r.reviewedText) return '';
   return `<section><h2>5 · Prepare the verified record for RheumDx</h2>
-  <p>Copy the verified text into the RheumDx case box when you are ready to analyse. The diagnostic tab keeps its current draft. Usual triage can proceed while answers are outstanding.</p>
+  <p>Copy the verified text into the RheumDx case box when you are ready to analyse, or into the reviewed source record in the clinic letter workflow. Only your reviewed patient history summary is included. The diagnostic tab keeps its current draft. Usual triage can proceed while answers are outstanding.</p>
   <label>Verified case text<textarea id="handoff" readonly>${html(verifiedCase(r))}</textarea></label>
-  <button id="copy-case" type="button">Copy verified case text</button>
+  <button id="copy-case" type="button">Copy verified case text</button> <a href="./Clinic_Review.html" target="_blank" rel="noopener">Open clinic review and letter</a>
   <p id="copy-status" role="status"></p></section>`;
 }
 function verifiedCase(r) {
   const date = value => value || 'date not supplied';
   const lines = [`Referral letter · ${date(r.referralDate)}\n${r.reviewedText}`];
   if (r.prior) lines.push(`Prior record · ${r.priorSource} · ${date(r.priorDate)}\n${r.prior}`);
-  if (r.patientReviewed && r.response?.status !== 'declined') {
-    const answers = r.response.keys.filter(key => r.response.answers[key]).map(key =>
-      `${questions.find(q => q[0] === key)[1]} ${r.response.answers[key]}`);
-    if (answers.length) lines.push(`Patient-reported history · received ${date(r.response.received)}\n${answers.join('\n')}`);
+  if (r.patientReviewed && r.patientSummary && r.response && r.response.status !== 'declined') {
+    lines.push(`Patient-reported history · received ${date(r.response.received)}\n${r.patientSummary}`);
   }
   if (r.discrepancies) lines.push(`Clinician review · discrepancies or gaps\n${r.discrepancies}`);
   return lines.join('\n\n');
@@ -373,7 +383,7 @@ function reviewPanel(r) {
     <label>Source date, if known<input id="prior-date" type="date" value="${html(r.priorDate)}"></label>
     <label>Verified information from that source<textarea id="prior-record" maxlength="4000">${html(r.prior)}</textarea></label></fieldset>
     <label>Discrepancies or gaps to clarify<textarea id="gaps" maxlength="2000" placeholder="For example, two sources list different medicine strengths.">${html(r.discrepancies)}</textarea></label>
-    ${response && response.status!=='declined'?`<label><input id="patient-checked" type="checkbox" ${r.patientReviewed?'checked':''}> I reviewed the patient answers for inclusion as patient-reported history.</label><br>`:''}
+    ${response && response.status!=='declined'?`<label><input id="patient-checked" type="checkbox" ${r.patientReviewed?'checked':''}> I reviewed the patient answers for inclusion as patient-reported history.</label><label>Reviewed patient history summary<textarea id="patient-summary" maxlength="4000" placeholder="Summarise relevant positives, negatives and uncertainty in your own words.">${html(r.patientSummary)}</textarea></label>`:''}
     <label>Clinician analysis or questions to clarify<textarea id="analysis-note" maxlength="4000" placeholder="Optional private note. Use this to choose follow-up questions.">${html(r.analysis)}</textarea></label>
     <label>Review outcome<select id="route"><option value="">Choose an outcome</option>
     <option value="usual" ${r.route==='usual'?'selected':''}>Continue with usual triage</option>
